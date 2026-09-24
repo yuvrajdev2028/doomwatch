@@ -1,0 +1,24 @@
+{
+  "name": "doomwatch-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Doomwatch - Unified Observability & Distributed Tracing Platform",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run --workspaces --if-present build",
+    "test": "npm run --workspaces --if-present test",
+    "clean": "npm run --workspaces --if-present clean"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Doomwatch Team",
+  "license": "MIT"
+}

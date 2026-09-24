@@ -1,0 +1,29 @@
+{
+  "name": "@doomwatch/node",
+  "version": "0.1.0",
+  "description": "Doomwatch Node.js SDK with OpenTelemetry Context Propagation & Zero-Touch HTTP Interception",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@doomwatch/core": "*",
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
+  },
+  "license": "MIT"
+}

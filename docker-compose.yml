@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: doomwatch-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: doomwatch
+    volumes:
+      - mongodb_data:/data/db
+
+  collector:
+    build:
+      context: .
+      dockerfile: packages/collector/Dockerfile
+    container_name: doomwatch-collector
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      PORT: 4000
+      MONGODB_URI: mongodb://mongodb:27017/doomwatch
+      MONGODB_DB_NAME: doomwatch
+      BATCH_FLUSH_INTERVAL_MS: 500
+      BATCH_SIZE: 50
+    depends_on:
+      - mongodb
+
+volumes:
+  mongodb_data:

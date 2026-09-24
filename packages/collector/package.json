@@ -1,0 +1,26 @@
+{
+  "name": "@doomwatch/collector",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Doomwatch Ingestion Collector API & Storage Engine",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "doomwatch-collector": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "start": "node dist/index.js",
+    "test": "node --test dist/**/*.test.js"
+  },
+  "dependencies": {
+    "@doomwatch/core": "*",
+    "mongodb": "^6.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
+  },
+  "license": "MIT"
+}
