@@ -25,8 +25,8 @@ export function createDoomwatchMiddleware(options: MiddlewareOptions) {
   const runtime = `node-${process.version}`;
 
   return function doomwatchMiddleware(
-    req: IncomingMessage & { body?: unknown; originalUrl?: string; baseUrl?: string },
-    res: ServerResponse & { getHeaders?: () => Record<string, string | string[] | undefined> },
+    req: any,
+    res: any,
     next?: (err?: any) => void
   ): void {
     const startTime = Date.now();

@@ -1,0 +1,27 @@
+{
+  "name": "example-e2e-test",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "End-to-End multi-service tracing test & demonstration",
+  "main": "dist/run-demo.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/e2e.test.js",
+    "demo": "node dist/run-demo.js"
+  },
+  "dependencies": {
+    "@doomwatch/core": "*",
+    "@doomwatch/collector": "*",
+    "@doomwatch/node": "*",
+    "@doomwatch/react": "*",
+    "example-service-a": "*",
+    "example-service-b": "*",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
+  }
+}

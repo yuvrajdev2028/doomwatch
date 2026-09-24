@@ -86,9 +86,9 @@ export class DoomwatchNodeSdk {
   /**
    * Returns Express / Connect middleware for incoming HTTP request interception.
    */
-  public middleware() {
+  public middleware(serviceNameOverride?: string) {
     return createDoomwatchMiddleware({
-      serviceName: this.config.serviceName,
+      serviceName: serviceNameOverride || this.config.serviceName,
       exporter: this.exporter,
       maxBodyBytes: this.config.maxBodyBytes,
       redactedKeys: this.config.redactedKeys
@@ -132,7 +132,7 @@ export class DoomwatchNodeSdk {
 export const Doomwatch = {
   init: DoomwatchNodeSdk.init,
   getInstance: DoomwatchNodeSdk.getInstance,
-  middleware: () => DoomwatchNodeSdk.getInstance().middleware(),
+  middleware: (serviceNameOverride?: string) => DoomwatchNodeSdk.getInstance().middleware(serviceNameOverride),
   getActiveTraceId: () => DoomwatchNodeSdk.getInstance().getActiveTraceId(),
   getActiveSpanId: () => DoomwatchNodeSdk.getInstance().getActiveSpanId(),
   flush: () => DoomwatchNodeSdk.getInstance().flush(),

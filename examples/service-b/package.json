@@ -1,0 +1,22 @@
+{
+  "name": "example-service-b",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Example Downstream Payment Service (Service B)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@doomwatch/node": "*",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
+  }
+}

@@ -11,6 +11,7 @@
   "scripts": {
     "build": "npm run --workspaces --if-present build",
     "test": "npm run --workspaces --if-present test",
+    "demo": "npm run --workspace=example-e2e-test demo",
     "clean": "npm run --workspaces --if-present clean"
   },
   "devDependencies": {

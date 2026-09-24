@@ -6,6 +6,7 @@ import {
   generateSpanId,
   generateTraceId,
   formatTraceparent,
+  parseTraceparent,
   redactHeaders,
   sanitizePayload
 } from '@doomwatch/core';
@@ -71,23 +72,35 @@ export function patchHttpClients(options: PatchHttpOptions): void {
       const method = (optionsArg.method || 'GET').toUpperCase();
 
       // Skip tracing requests to the Doomwatch Collector itself to avoid infinite feedback loops
-      if (host.includes(collectorHost)) {
+      if (
+        path.includes('/v1/traces') ||
+        path.includes('/v1/telemetry') ||
+        host.includes(collectorHost)
+      ) {
         return originalRequest.apply(this, args as any);
       }
 
-      // Check ambient context
+      // Check ambient context or existing headers
+      optionsArg.headers = optionsArg.headers || {};
+      const rawExistingTp = (optionsArg.headers as any)['traceparent'];
+      const parsedTp = typeof rawExistingTp === 'string' ? parseTraceparent(rawExistingTp) : null;
+      const existingTraceId = (optionsArg.headers as any)['x-tracing-id'] || parsedTp?.trace_id;
+
       const activeCtx = getActiveTraceContext();
       const parentSpan = getActiveSpan();
 
-      const traceId = activeCtx ? activeCtx.trace_id : generateTraceId();
+      const traceId = (existingTraceId as string) || (activeCtx ? activeCtx.trace_id : generateTraceId());
       const childSpanId = generateSpanId();
       const parentSpanId = parentSpan ? parentSpan.span_id : activeCtx?.span_id || null;
 
-      // Inject trace headers into outgoing request
-      optionsArg.headers = optionsArg.headers || {};
-      (optionsArg.headers as any)['traceparent'] = formatTraceparent(traceId, childSpanId);
-      (optionsArg.headers as any)['x-tracing-id'] = traceId;
-      if (parentSpanId) {
+      // Inject trace headers into outgoing request if not present
+      if (!rawExistingTp) {
+        (optionsArg.headers as any)['traceparent'] = formatTraceparent(traceId, childSpanId);
+      }
+      if (!(optionsArg.headers as any)['x-tracing-id']) {
+        (optionsArg.headers as any)['x-tracing-id'] = traceId;
+      }
+      if (parentSpanId && !(optionsArg.headers as any)['x-parent-id']) {
         (optionsArg.headers as any)['x-parent-id'] = parentSpanId;
       }
 
@@ -99,7 +112,7 @@ export function patchHttpClients(options: PatchHttpOptions): void {
         trace_id: traceId,
         span_id: childSpanId,
         parent_span_id: parentSpanId,
-        service_name: serviceName,
+        service_name: parentSpan?.service_name || serviceName,
         runtime,
         span_kind: 'CLIENT',
         name: `${method} ${path.split('?')[0]}`,
@@ -191,21 +204,38 @@ export function patchHttpClients(options: PatchHttpOptions): void {
       const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
       // Skip collector requests
-      if (urlStr.includes(collectorHost)) {
+      if (
+        urlStr.includes('/v1/traces') ||
+        urlStr.includes('/v1/telemetry') ||
+        urlStr.includes(collectorHost)
+      ) {
         return originalFetch(input, init);
       }
+
+      // If called directly from browser window without active backend span, let browser SDK handle it
+      if (typeof (globalThis as any).window !== 'undefined' && !getActiveSpan()) {
+        return originalFetch(input, init);
+      }
+
+      const headers = new Headers(init?.headers || (typeof input === 'object' && 'headers' in input ? (input as Request).headers : {}));
+      const existingTp = headers.get('traceparent');
+      const parsedTp = existingTp ? parseTraceparent(existingTp) : null;
+      const existingTraceId = headers.get('x-tracing-id') || parsedTp?.trace_id;
 
       const activeCtx = getActiveTraceContext();
       const parentSpan = getActiveSpan();
 
-      const traceId = activeCtx ? activeCtx.trace_id : generateTraceId();
+      const traceId = (existingTraceId as string) || (activeCtx ? activeCtx.trace_id : generateTraceId());
       const childSpanId = generateSpanId();
       const parentSpanId = parentSpan ? parentSpan.span_id : activeCtx?.span_id || null;
 
-      const headers = new Headers(init?.headers || (typeof input === 'object' && 'headers' in input ? (input as Request).headers : {}));
-      headers.set('traceparent', formatTraceparent(traceId, childSpanId));
-      headers.set('x-tracing-id', traceId);
-      if (parentSpanId) {
+      if (!headers.has('traceparent')) {
+        headers.set('traceparent', formatTraceparent(traceId, childSpanId));
+      }
+      if (!headers.has('x-tracing-id')) {
+        headers.set('x-tracing-id', traceId);
+      }
+      if (parentSpanId && !headers.has('x-parent-id')) {
         headers.set('x-parent-id', parentSpanId);
       }
 
@@ -216,7 +246,7 @@ export function patchHttpClients(options: PatchHttpOptions): void {
         trace_id: traceId,
         span_id: childSpanId,
         parent_span_id: parentSpanId,
-        service_name: serviceName,
+        service_name: parentSpan?.service_name || serviceName,
         runtime,
         span_kind: 'CLIENT',
         name: `${method} ${new URL(urlStr, 'http://localhost').pathname}`,
