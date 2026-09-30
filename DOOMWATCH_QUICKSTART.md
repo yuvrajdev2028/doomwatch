@@ -9,6 +9,7 @@ This guide provides step-by-step instructions to run, test, and inspect **Doomwa
 | Component | Package / Path | Description | Default Port |
 | :--- | :--- | :--- | :--- |
 | **Collector API** | [`packages/collector`](file:///home/yuvraj-pratap-singh/doomwatch/packages/collector) | Ingestion server & trace storage engine | `4000` |
+| **Web Dashboard** | [`packages/dashboard`](file:///home/yuvraj-pratap-singh/doomwatch/packages/dashboard) | Trace visualizer, flame graph & payload inspector | `4000` (or `5000`) |
 | **Node.js SDK** | [`packages/sdk-node`](file:///home/yuvraj-pratap-singh/doomwatch/packages/sdk-node) | Auto-instrumenting Node/Express SDK | Library |
 | **React SDK** | [`packages/sdk-react`](file:///home/yuvraj-pratap-singh/doomwatch/packages/sdk-react) | Browser fetch/XHR interceptor & provider | Library |
 | **Core Contracts** | [`packages/core`](file:///home/yuvraj-pratap-singh/doomwatch/packages/core) | W3C parser, ID generation & sanitization | Library |
@@ -220,7 +221,50 @@ curl http://localhost:4000/health
 
 ---
 
-## 7. Using Real MongoDB (Optional)
+## 7. Minimal Web Dashboard (Phase 6)
+
+Doomwatch includes a built-in, zero-dependency interactive Web Dashboard for visual trace exploration, waterfall flame charts, and span inspection.
+
+### Accessing the Dashboard:
+The dashboard is served directly by the Doomwatch Ingestion Collector:
+1. Start the Collector:
+   ```bash
+   npm run start --workspace=@doomwatch/collector
+   ```
+2. Open your browser and navigate to:
+   ```text
+   http://localhost:4000/
+   ```
+   *(or `http://localhost:4000/dashboard`)*
+
+### Standalone Dashboard Server (Alternative):
+You can also run the dashboard as an independent microservice pointing to any Doomwatch collector:
+```bash
+npm run start --workspace=@doomwatch/dashboard
+```
+Then navigate to: **`http://localhost:5000/`**
+
+### Dashboard Capabilities & Features:
+* **Live Feed & Auto-Refresh**: Automatically polls the Collector every 2 seconds for fresh traces with a one-click pause/play toggle.
+* **Trace Filter Bar**: Instant client-side search and filtering by:
+  * Trace ID (hex hash)
+  * Service Name (`order-service`, `payment-service`, `web-store-frontend`, etc.)
+  * Error status (`Errors Only` toggle)
+  * HTTP Status Code
+* **Interactive Waterfall & DAG Flame Graph**:
+  * Visualizes the complete parent-child span hierarchy with branch connectors.
+  * Proportional horizontal timing bars showing exact start offset and duration for each span in milliseconds.
+  * Color-coded service tags and status badges (Success `200/201`, Client Error `4xx`, Server Error `5xx`).
+* **Slide-out Span Inspector Drawer**:
+  * Click any span row in the waterfall to inspect deep telemetry details.
+  * Details include: Span ID, Parent Span ID, HTTP Method, Target URL, Status Code, Duration.
+  * Sanitized HTTP Headers (Authorization tokens masked).
+  * Sanitized & Truncated Request / Response JSON Payloads (sensitive keys like `password`, `token`, `secret` automatically redacted).
+  * Error message and stack traces for failed spans.
+
+---
+
+## 8. Using Real MongoDB (Optional)
 
 If you have Docker installed and want to test persistence with a real MongoDB database:
 
@@ -236,7 +280,7 @@ If you have Docker installed and want to test persistence with a real MongoDB da
 
 ---
 
-## 8. Summary of How Zero-Touch Tracing Works
+## 9. Summary of How Zero-Touch Tracing Works
 
 1. **Node.js Services**:
    ```javascript

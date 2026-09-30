@@ -4,6 +4,7 @@ import { Span, TraceFilter } from '@doomwatch/core';
 import { StorageEngine } from './storage/interface.js';
 import { SpanBuffer } from './buffer.js';
 import { CollectorConfig } from './config.js';
+import { DASHBOARD_HTML } from './dashboard-html.js';
 
 export class CollectorServer {
   private server: http.Server;
@@ -87,7 +88,14 @@ export class CollectorServer {
         return;
       }
 
-      // 2. Ingest Spans (POST /v1/traces or POST /v1/telemetry)
+      // 2. Web Dashboard UI
+      if (req.method === 'GET' && (pathname === '/' || pathname === '/dashboard')) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(DASHBOARD_HTML);
+        return;
+      }
+
+      // 3. Ingest Spans (POST /v1/traces or POST /v1/telemetry)
       if (req.method === 'POST' && (pathname === '/v1/traces' || pathname === '/v1/telemetry')) {
         const body = await this.readJsonBody(req);
         let spans: Span[] = [];

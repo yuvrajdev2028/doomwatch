@@ -227,6 +227,12 @@ describe('CollectorServer HTTP Endpoints', () => {
     assert.strictEqual(optionsRes.status, 204);
   });
 
+  it('should serve HTML visualizer on GET /', async () => {
+    const res = await request({ method: 'GET', path: '/' });
+    assert.strictEqual(res.status, 200);
+    assert.ok(typeof res.body === 'string' && res.body.includes('DOOMWATCH'));
+  });
+
   it('should gracefully stop server', async () => {
     await server.stop();
   });

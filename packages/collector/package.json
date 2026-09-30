@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@doomwatch/core": "*",
+    "@doomwatch/dashboard": "*",
     "mongodb": "^6.5.0"
   },
   "devDependencies": {

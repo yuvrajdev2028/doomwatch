@@ -134,12 +134,13 @@ flowchart TD
 
 ---
 
-### Milestone 6: Web Dashboard (`packages/dashboard`)
+### Milestone 6: Web Dashboard (`packages/dashboard`) - **COMPLETED ✓**
 * **Goal**: Visual interface to explore traces, inspect errors, and analyze performance.
 * **Key Features**:
-  1. **Trace Explorer**: Filterable list (Search by Trace ID, Service, Status Code $4xx/5xx$, Latency range).
-  2. **Waterfall Flame Chart**: Shows the DAG hierarchy, start offset, and duration of every span.
-  3. **Span Detail Modal**: Displays request URL, headers, request body, response body, and error stack traces.
+  1. **Trace Explorer**: Filterable list (Search by Trace ID, Service, Status Code $4xx/5xx$, Latency range, auto-refresh every 2 seconds).
+  2. **Waterfall Flame Chart**: Shows the DAG hierarchy with branch connectors, start offset, and duration of every span.
+  3. **Span Detail Drawer**: Slide-out panel displaying request URL, sanitized headers, sanitized & truncated request/response JSON payloads, and error stack traces.
+  4. **Dual-Mode Deployment**: Served directly on `http://localhost:4000/` by the Collector, or standalone on `http://localhost:5000/` via `@doomwatch/dashboard`.
 
 ---
 
