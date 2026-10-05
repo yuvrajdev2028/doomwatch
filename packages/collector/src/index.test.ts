@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import http from 'node:http';
 import { Span } from '@doomwatch/core';
 import { MemoryStorageEngine } from './storage/memory.js';
+import { MongoStorageEngine } from './storage/mongo.js';
 import { SpanBuffer } from './buffer.js';
 import { CollectorServer } from './server.js';
 import { CollectorConfig } from './config.js';
@@ -134,6 +135,54 @@ describe('MemoryStorageEngine DAG & Querying', () => {
     const status500 = await storage.getTraces({ status_code: 500 });
     assert.strictEqual(status500.length, 1);
     assert.strictEqual(status500[0].trace_id, 't-err');
+  });
+});
+
+describe('MongoStorageEngine Aggregation & Trace Computation', () => {
+  it('should correctly flag has_error: false for successful spans and true for errors', async () => {
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/doomwatch';
+    const engine = new MongoStorageEngine(mongoUri, 'doomwatch_unit_test');
+    try {
+      await engine.init();
+    } catch {
+      // Gracefully skip if MongoDB is not accessible in this environment
+      return;
+    }
+
+    try {
+      // Clean collection
+      await (engine as any).spansCollection.deleteMany({ trace_id: { $regex: /^test-mongo-/ } });
+
+      const now = Date.now();
+      const successSpan = makeSampleSpan({
+        trace_id: 'test-mongo-ok',
+        service_name: 'order-service',
+        http: { method: 'POST', url: '/orders', status_code: 201 }
+      });
+      delete (successSpan as any).error;
+
+      const errorSpan = makeSampleSpan({
+        trace_id: 'test-mongo-err',
+        service_name: 'order-service',
+        http: { method: 'POST', url: '/orders', status_code: 500 },
+        error: { name: 'InternalError', message: 'DB down' }
+      });
+
+      await engine.insertSpans([successSpan, errorSpan]);
+
+      const summaries = await engine.getTraces();
+      const okTrace = summaries.find((t) => t.trace_id === 'test-mongo-ok');
+      const errTrace = summaries.find((t) => t.trace_id === 'test-mongo-err');
+
+      assert.ok(okTrace, 'test-mongo-ok should exist');
+      assert.strictEqual(okTrace.has_error, false, 'Successful trace must have has_error: false');
+
+      assert.ok(errTrace, 'test-mongo-err should exist');
+      assert.strictEqual(errTrace.has_error, true, 'Error trace must have has_error: true');
+    } finally {
+      await (engine as any).spansCollection.deleteMany({ trace_id: { $regex: /^test-mongo-/ } }).catch(() => {});
+      await engine.close();
+    }
   });
 });
 

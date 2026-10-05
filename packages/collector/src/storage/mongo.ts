@@ -80,8 +80,18 @@ export class MongoStorageEngine implements StorageEngine {
               $cond: [
                 {
                   $or: [
-                    { $ne: ['$error', null] },
-                    { $gte: ['$http.status_code', 400] }
+                    {
+                      $and: [
+                        { $ne: [{ $type: '$error' }, 'missing'] },
+                        { $ne: ['$error', null] }
+                      ]
+                    },
+                    {
+                      $and: [
+                        { $isNumber: '$http.status_code' },
+                        { $gte: ['$http.status_code', 400] }
+                      ]
+                    }
                   ]
                 },
                 true,
