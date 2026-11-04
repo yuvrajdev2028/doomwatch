@@ -133,7 +133,7 @@ export function extractOrGenerateTraceContext(
     }
   }
 
-  // 2. Try legacy x-tracing-id (Point 6 & 7 of ideation)
+  // 2. Try legacy x-tracing-id
   const legacyTraceId = normalizedHeaders['x-tracing-id'] || normalizedHeaders['x-request-id'];
   if (legacyTraceId) {
     const traceId = normalizeTraceId(legacyTraceId);

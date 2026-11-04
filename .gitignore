@@ -27,3 +27,11 @@ pnpm-debug.log*
 
 # Scratch & artifacts
 scratch/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+.pytest_cache/

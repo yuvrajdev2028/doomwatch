@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "doomwatch"
+version = "0.1.0"
+description = "Doomwatch SDK for Python - Unified Observability & Distributed Tracing"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "Doomwatch Team" }
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Monitoring"
+]
+dependencies = [
+    "opentelemetry-api>=1.20.0"
+]
+
+[project.optional-dependencies]
+fastapi = ["fastapi>=0.95.0", "starlette>=0.27.0"]
+flask = ["flask>=2.0.0"]
+requests = ["requests>=2.25.0"]
+httpx = ["httpx>=0.23.0"]
+all = [
+    "fastapi>=0.95.0",
+    "starlette>=0.27.0",
+    "flask>=2.0.0",
+    "requests>=2.25.0",
+    "httpx>=0.23.0"
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.20.0"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["doomwatch*"]

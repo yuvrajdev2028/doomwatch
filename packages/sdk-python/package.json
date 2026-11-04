@@ -1,0 +1,8 @@
+{
+  "name": "@doomwatch/python",
+  "version": "0.1.0",
+  "description": "Doomwatch Python SDK wrapper and scripts",
+  "scripts": {
+    "test": "PYTHONPATH=. python3 -m unittest discover -s tests"
+  }
+}
