@@ -1,0 +1,8 @@
+{
+  "name": "@doomwatch/java",
+  "version": "0.1.0",
+  "description": "Doomwatch Java / JVM SDK wrapper and scripts",
+  "scripts": {
+    "test": "mvn test -q"
+  }
+}
