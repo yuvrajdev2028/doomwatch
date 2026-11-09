@@ -65,6 +65,16 @@ export class MemoryStorageEngine implements StorageEngine {
       if (filter.to_time_ms !== undefined && startTime > filter.to_time_ms) {
         continue;
       }
+      if (filter.db_system && !sorted.some((s) => s.db?.system === filter.db_system)) {
+        continue;
+      }
+      if (filter.min_db_duration_ms !== undefined) {
+        const dbSpans = sorted.filter((s) => Boolean(s.db));
+        const maxDbDuration = dbSpans.length > 0 ? Math.max(...dbSpans.map((s) => s.duration_ms)) : 0;
+        if (maxDbDuration < filter.min_db_duration_ms) {
+          continue;
+        }
+      }
 
       summaries.push({
         trace_id: traceId,

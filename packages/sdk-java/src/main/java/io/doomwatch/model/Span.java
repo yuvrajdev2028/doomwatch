@@ -40,6 +40,9 @@ public class Span {
     @JsonProperty("http")
     private HttpData http;
 
+    @JsonProperty("db")
+    private DatabaseData db;
+
     @JsonProperty("error")
     private SpanError error;
 
@@ -80,6 +83,9 @@ public class Span {
 
     public HttpData getHttp() { return http; }
     public void setHttp(HttpData http) { this.http = http; }
+
+    public DatabaseData getDb() { return db; }
+    public void setDb(DatabaseData db) { this.db = db; }
 
     public SpanError getError() { return error; }
     public void setError(SpanError error) { this.error = error; }

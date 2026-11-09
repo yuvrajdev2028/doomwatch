@@ -9,6 +9,33 @@ SpanKind = Literal['SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER', 'INTERNAL']
 
 
 @dataclass
+class DatabaseData:
+    system: str                          # 'mongodb', 'postgresql', 'mysql', 'redis', 'memcached'
+    statement: Optional[str] = None      # Sanitized query statement
+    operation: Optional[str] = None      # 'SELECT', 'GET', 'find', etc.
+    collection_or_table: Optional[str] = None
+    name: Optional[str] = None           # DB name
+    rows_affected: Optional[int] = None
+    cache_hit: Optional[bool] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        result: Dict[str, Any] = {"system": self.system}
+        if self.statement is not None:
+            result["statement"] = self.statement
+        if self.operation is not None:
+            result["operation"] = self.operation
+        if self.collection_or_table is not None:
+            result["collection_or_table"] = self.collection_or_table
+        if self.name is not None:
+            result["name"] = self.name
+        if self.rows_affected is not None:
+            result["rows_affected"] = self.rows_affected
+        if self.cache_hit is not None:
+            result["cache_hit"] = self.cache_hit
+        return result
+
+
+@dataclass
 class HttpData:
     method: str
     url: str
@@ -68,6 +95,7 @@ class Span:
     end_time_unix_ms: int              # End timestamp in milliseconds since epoch
     duration_ms: int                   # Duration in milliseconds (end - start)
     http: Optional[HttpData] = None    # HTTP-specific metadata
+    db: Optional[DatabaseData] = None  # Database / Cache metadata
     error: Optional[SpanError] = None  # Error details if span failed
     metadata: Optional[Dict[str, Any]] = None # Custom tags or attributes
 
@@ -86,6 +114,8 @@ class Span:
         }
         if self.http is not None:
             data["http"] = self.http.to_dict()
+        if self.db is not None:
+            data["db"] = self.db.to_dict()
         if self.error is not None:
             data["error"] = self.error.to_dict()
         if self.metadata is not None:
@@ -119,4 +149,5 @@ class DoomwatchConfig:
     batch_size: int = 50
     redacted_keys: List[str] = field(default_factory=list)
     auto_patch_http: bool = True
+    instrument_database: bool = True
     debug: bool = False

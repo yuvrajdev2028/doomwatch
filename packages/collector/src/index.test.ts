@@ -136,6 +136,48 @@ describe('MemoryStorageEngine DAG & Querying', () => {
     assert.strictEqual(status500.length, 1);
     assert.strictEqual(status500[0].trace_id, 't-err');
   });
+
+  it('should filter traces by db_system and min_db_duration_ms', async () => {
+    const storage = new MemoryStorageEngine();
+    await storage.init();
+
+    const pgSpan = makeSampleSpan({
+      trace_id: 't-pg',
+      service_name: 'user-svc',
+      duration_ms: 150,
+      db: {
+        system: 'postgresql',
+        operation: 'SELECT',
+        collection_or_table: 'users',
+        statement: 'SELECT * FROM users WHERE id = ?'
+      }
+    });
+
+    const redisSpan = makeSampleSpan({
+      trace_id: 't-redis',
+      service_name: 'cache-svc',
+      duration_ms: 5,
+      db: {
+        system: 'redis',
+        operation: 'GET',
+        collection_or_table: 'sessions',
+        statement: 'GET session:123'
+      }
+    });
+
+    await storage.insertSpans([pgSpan, redisSpan]);
+
+    const pgOnly = await storage.getTraces({ db_system: 'postgresql' });
+    assert.strictEqual(pgOnly.length, 1);
+    assert.strictEqual(pgOnly[0].trace_id, 't-pg');
+
+    const slowDbOnly = await storage.getTraces({ min_db_duration_ms: 50 });
+    assert.strictEqual(slowDbOnly.length, 1);
+    assert.strictEqual(slowDbOnly[0].trace_id, 't-pg');
+
+    const fastDbOnly = await storage.getTraces({ min_db_duration_ms: 1 });
+    assert.strictEqual(fastDbOnly.length, 2);
+  });
 });
 
 describe('MongoStorageEngine Aggregation & Trace Computation', () => {

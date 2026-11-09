@@ -4,6 +4,41 @@
 
 export type SpanKind = 'SERVER' | 'CLIENT' | 'PRODUCER' | 'CONSUMER' | 'INTERNAL';
 
+export type DatabaseSystem =
+  | 'mongodb'
+  | 'postgresql'
+  | 'mysql'
+  | 'redis'
+  | 'memcached';
+
+export type DatabaseOperation =
+  | 'find'
+  | 'insert'
+  | 'update'
+  | 'delete'
+  | 'aggregate'
+  | 'count'
+  | 'SELECT'
+  | 'INSERT'
+  | 'UPDATE'
+  | 'DELETE'
+  | 'GET'
+  | 'SET'
+  | 'DEL'
+  | 'HGET'
+  | 'HSET'
+  | string;
+
+export interface DatabaseData {
+  system: DatabaseSystem;
+  name?: string;                     // Database name (e.g., 'production_db')
+  statement?: string;                // Sanitized, parameterized query or command
+  operation?: DatabaseOperation | string;
+  collection_or_table?: string;      // Collection (Mongo) or Table (SQL)
+  rows_affected?: number;            // Count of affected rows or documents
+  cache_hit?: boolean;               // For Redis/Memcached (true = hit, false = miss)
+}
+
 export interface HttpData {
   method: string;
   url: string;
@@ -33,6 +68,7 @@ export interface Span {
   end_time_unix_ms: number;      // End timestamp in milliseconds since epoch
   duration_ms: number;           // Duration in milliseconds (end - start)
   http?: HttpData;               // HTTP-specific metadata
+  db?: DatabaseData;             // Database / Cache-specific metadata
   error?: SpanError | null;      // Error details if span failed
   metadata?: Record<string, unknown>; // Custom tags or attributes
 }
@@ -71,6 +107,8 @@ export interface TraceFilter {
   to_time_ms?: number;
   limit?: number;
   offset?: number;
+  db_system?: string;
+  min_db_duration_ms?: number;
 }
 
 export interface IngestPayload {
@@ -86,4 +124,5 @@ export interface DoomwatchConfig {
   batch_interval_ms?: number;   // Default: 1000ms
   batch_size?: number;          // Default: 50
   redacted_fields?: string[];   // Keys to redact from payloads
+  instrument_database?: boolean;// Default: true
 }

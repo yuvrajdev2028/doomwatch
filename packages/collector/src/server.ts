@@ -137,6 +137,12 @@ export class CollectorServer {
           status_code: query.has('status_code') ? parseInt(query.get('status_code')!, 10) : undefined,
           from_time_ms: query.has('from') ? parseInt(query.get('from')!, 10) : undefined,
           to_time_ms: query.has('to') ? parseInt(query.get('to')!, 10) : undefined,
+          db_system: query.get('db_system') || undefined,
+          min_db_duration_ms: query.has('min_db_duration')
+            ? parseInt(query.get('min_db_duration')!, 10)
+            : query.has('min_db_duration_ms')
+            ? parseInt(query.get('min_db_duration_ms')!, 10)
+            : undefined,
           limit: query.has('limit') ? parseInt(query.get('limit')!, 10) : 50,
           offset: query.has('offset') ? parseInt(query.get('offset')!, 10) : 0
         };

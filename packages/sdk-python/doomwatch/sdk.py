@@ -60,6 +60,7 @@ class Doomwatch:
         batch_size: int = 50,
         redacted_keys: Optional[List[str]] = None,
         auto_patch_http: bool = True,
+        instrument_database: bool = True,
         debug: bool = False
     ) -> "Doomwatch":
         """
@@ -81,6 +82,13 @@ class Doomwatch:
             or "development"
         )
 
+        env_db_override = os.environ.get("DOOMWATCH_INSTRUMENT_DATABASE")
+        effective_db_enabled = (
+            instrument_database
+            if env_db_override is None
+            else env_db_override.lower() not in ("0", "false")
+        )
+
         config = DoomwatchConfig(
             service_name=service_name,
             collector_url=effective_collector,
@@ -90,6 +98,7 @@ class Doomwatch:
             batch_size=batch_size,
             redacted_keys=redacted_keys or [],
             auto_patch_http=auto_patch_http,
+            instrument_database=effective_db_enabled,
             debug=debug
         )
 

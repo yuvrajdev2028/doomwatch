@@ -11,7 +11,8 @@ import { createServiceB } from '../../service-b/dist/index.js';
 
 async function main() {
   console.log('\n============================================================');
-  console.log('              DOOMWATCH END-TO-END DEMO');
+  console.log('       DOOMWATCH FULL-STACK DISTRIBUTED TRACING DEMO');
+  console.log('   (Frontend -> Microservices -> PostgreSQL -> Redis Cache)   ');
   console.log('============================================================\n');
 
   const collectorPort = 4000;
@@ -34,20 +35,20 @@ async function main() {
   await collectorServer.start();
   console.log(`✓ Doomwatch Collector running on http://localhost:${collectorPort}`);
 
-  // 2. Start Service B (Payment Service)
+  // 2. Start Service B (Payment Service with Redis & PostgreSQL)
   const appB = createServiceB(`http://127.0.0.1:${collectorPort}`);
   const serviceB = http.createServer(appB);
   await new Promise<void>((resolve) => serviceB.listen(serviceBPort, resolve));
-  console.log(`✓ Service B (Payment Service) running on http://localhost:${serviceBPort}`);
+  console.log(`✓ Service B (Payment Service + Redis + PostgreSQL) running on http://localhost:${serviceBPort}`);
 
-  // 3. Start Service A (Order Service)
+  // 3. Start Service A (Order Service with PostgreSQL)
   const appA = createServiceA(
     `http://127.0.0.1:${collectorPort}`,
     `http://127.0.0.1:${serviceBPort}`
   );
   const serviceA = http.createServer(appA);
   await new Promise<void>((resolve) => serviceA.listen(serviceAPort, resolve));
-  console.log(`✓ Service A (Order Service) running on http://localhost:${serviceAPort}`);
+  console.log(`✓ Service A (Order Service + PostgreSQL) running on http://localhost:${serviceAPort}`);
 
   // 4. Setup simulated frontend browser environment
   (globalThis as any).window = {
@@ -83,9 +84,9 @@ async function main() {
   });
 
   const orderResult = await res.json();
-  console.log(`[Service A] Order confirmed: ${orderResult.orderId} (status: ${orderResult.status})`);
-  console.log(`[Service B] Payment processed: ${orderResult.payment.transactionId} ($${orderResult.payment.amount})`);
-  console.log(`[Frontend] Received 201 Created from Service A!`);
+  console.log(`[Service A] Order recorded in PostgreSQL (status: ${orderResult.status})`);
+  console.log(`[Service B] Payment checked in Redis cache & recorded in PostgreSQL: ${orderResult.payment.transactionId}`);
+  console.log(`[Frontend] Received 201 Created from Service A with active trace continuation!`);
 
   interaction.end();
 
@@ -97,7 +98,7 @@ async function main() {
 
   // 5. Query trace from Doomwatch Collector
   console.log('\n------------------------------------------------------------');
-  console.log('▶ Reconstructing Trace Waterfall from Doomwatch Collector:');
+  console.log('▶ Reconstructing Complete Distributed Trace Waterfall (DAG):');
   console.log('------------------------------------------------------------');
 
   const trace = await collectorStorage.getTraceById(traceId);
@@ -112,17 +113,60 @@ async function main() {
   console.log(`Spans    : ${trace.span_count}`);
   console.log(`Status   : ${trace.has_error ? 'FAILED ✗' : 'SUCCESS ✓'}\n`);
 
-  console.log('Trace Waterfall Hierarchy:');
-  for (const span of trace.spans) {
-    const isRoot = !span.parent_span_id;
-    const prefix = isRoot ? '' : '   '.repeat(span.span_kind === 'SERVER' ? 1 : 2) + '└── ';
-    const typeLabel = `[${span.service_name}] (${span.span_kind})`;
-    const statusLabel = span.http?.status_code ? `HTTP ${span.http.status_code}` : '';
-    console.log(`${prefix}${typeLabel.padEnd(35)} ${span.name.padEnd(20)} ${statusLabel.padEnd(10)} (${span.duration_ms}ms)`);
+  // Build causal tree hierarchy
+  const spanMap = new Map<string, any>();
+  const rootSpans: any[] = [];
+  for (const s of trace.spans) {
+    spanMap.set(s.span_id, { ...s, children: [] });
+  }
+  for (const s of trace.spans) {
+    const node = spanMap.get(s.span_id);
+    if (s.parent_span_id && spanMap.has(s.parent_span_id)) {
+      spanMap.get(s.parent_span_id).children.push(node);
+    } else {
+      rootSpans.push(node);
+    }
   }
 
+  function printWaterfallTree(node: any, depth = 0) {
+    const indent = '  '.repeat(depth) + (depth > 0 ? '└── ' : '');
+    const serviceLabel = `[${node.service_name}]`.padEnd(24);
+    let details = '';
+
+    if (node.http?.status_code) {
+      details = `HTTP ${node.http.status_code}`;
+    } else if (node.db) {
+      if (node.db.system === 'redis') {
+        const hitLabel = node.db.cache_hit === true ? '[CACHE HIT]' : node.db.cache_hit === false ? '[CACHE MISS]' : '';
+        details = `Redis ${hitLabel} "${node.db.statement}"`;
+      } else {
+        details = `SQL (${node.db.system}) "${node.db.statement}"`;
+      }
+    }
+
+    console.log(`${indent}${serviceLabel} ${node.name.padEnd(28)} (${node.duration_ms}ms) ${details}`);
+    for (const child of node.children) {
+      printWaterfallTree(child, depth + 1);
+    }
+  }
+
+  console.log('Trace Waterfall Hierarchy:');
+  for (const root of rootSpans) {
+    printWaterfallTree(root);
+  }
+
+  // Telemetry Statistics
+  const httpSpans = trace.spans.filter((s) => Boolean(s.http) || s.span_kind === 'SERVER');
+  const dbSpans = trace.spans.filter((s) => s.db?.system === 'postgresql');
+  const redisSpans = trace.spans.filter((s) => s.db?.system === 'redis');
+
+  console.log('\nTelemetry Breakdown:');
+  console.log(` • HTTP Spans      : ${httpSpans.length}`);
+  console.log(` • PostgreSQL Spans: ${dbSpans.length} (auto-sanitized statements)`);
+  console.log(` • Redis Spans     : ${redisSpans.length} (cache HIT/MISS & token redactions)`);
+
   console.log('\n============================================================');
-  console.log('✓ TRACE CONTINUATION & DAG VERIFIED WITH ZERO CODE CHANGES!');
+  console.log('✓ DISTRIBUTED TRACE DAG ACROSS HTTP, DB & CACHE VERIFIED!');
   console.log('============================================================\n');
 
   // Teardown

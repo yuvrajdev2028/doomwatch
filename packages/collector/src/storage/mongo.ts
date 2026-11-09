@@ -31,7 +31,8 @@ export class MongoStorageEngine implements StorageEngine {
       this.spansCollection.createIndex({ service_name: 1, start_time_unix_ms: -1 }),
       this.spansCollection.createIndex({ start_time_unix_ms: -1 }),
       this.spansCollection.createIndex({ 'http.status_code': 1 }),
-      this.spansCollection.createIndex({ error: 1 }, { sparse: true })
+      this.spansCollection.createIndex({ error: 1 }, { sparse: true }),
+      this.spansCollection.createIndex({ 'db.system': 1, 'db.collection_or_table': 1, duration_ms: -1 })
     ]);
 
     this.connected = true;
@@ -63,6 +64,13 @@ export class MongoStorageEngine implements StorageEngine {
       if (filter.to_time_ms !== undefined) {
         (matchStage.start_time_unix_ms as Record<string, number>).$lte = filter.to_time_ms;
       }
+    }
+    if (filter.db_system) {
+      matchStage['db.system'] = filter.db_system;
+    }
+    if (filter.min_db_duration_ms !== undefined) {
+      matchStage['db'] = { $exists: true, $ne: null };
+      matchStage['duration_ms'] = { $gte: filter.min_db_duration_ms };
     }
 
     // Aggregation pipeline to group spans into traces

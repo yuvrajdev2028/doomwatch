@@ -41,13 +41,13 @@ describe('Doomwatch End-to-End Multi-Service Tracing', () => {
     collectorServer = new CollectorServer(collectorConfig, collectorStorage);
     await collectorServer.start();
 
-    // 2. Start Service B (Downstream Payment Service)
+    // 2. Start Service B (Downstream Payment Service with Redis & PostgreSQL)
     const appB = createServiceB(`http://127.0.0.1:${collectorPort}`);
     serviceBServer = http.createServer(appB);
     await new Promise<void>((resolve) => serviceBServer.listen(0, resolve));
     serviceBPort = (serviceBServer.address() as any).port;
 
-    // 3. Start Service A (Upstream Order Service)
+    // 3. Start Service A (Upstream Order Service with PostgreSQL)
     const appA = createServiceA(
       `http://127.0.0.1:${collectorPort}`,
       `http://127.0.0.1:${serviceBPort}`
@@ -80,7 +80,7 @@ describe('Doomwatch End-to-End Multi-Service Tracing', () => {
     await collectorServer.stop();
   });
 
-  it('should capture end-to-end trace from Frontend -> Service A -> Service B with exact DAG causality', async () => {
+  it('should capture end-to-end trace with database & cache spans in DAG causality', async () => {
     // 1. User clicks "Checkout" in Frontend
     const interaction = browserSdk.startUserInteraction('Checkout Button');
     const expectedTraceId = interaction.traceId;
@@ -123,37 +123,127 @@ describe('Doomwatch End-to-End Multi-Service Tracing', () => {
     assert.ok(trace.service_names.includes('order-service'), 'Order service span present');
     assert.ok(trace.service_names.includes('payment-service'), 'Payment service span present');
 
-    // 6. Verify DAG Parent-Child Relationships
+    // 6. Verify DAG Parent-Child Relationships across HTTP, Database, and Cache
     const spans = trace.spans;
-    assert.ok(spans.length >= 3, `Expected at least 3 spans in DAG, received ${spans.length}`);
+    assert.ok(spans.length >= 8, `Expected at least 8 spans in DAG (HTTP + DB + Cache), received ${spans.length}`);
 
-    // Span 1: Frontend Client Span
+    // Span 1: Frontend Client Span (Root)
     const frontendSpan = spans.find((s) => s.service_name === 'web-store-frontend' && s.span_kind === 'CLIENT');
     assert.ok(frontendSpan, 'Frontend client span exists');
     assert.strictEqual(frontendSpan.trace_id, expectedTraceId);
 
-    // Span 2: Service A Server Span
+    // Span 2: Service A Server Span (incoming /orders)
     const serviceAServerSpan = spans.find((s) => s.service_name === 'order-service' && s.span_kind === 'SERVER');
     assert.ok(serviceAServerSpan, 'Service A server span exists');
     assert.strictEqual(serviceAServerSpan.trace_id, expectedTraceId);
     assert.strictEqual(serviceAServerSpan.parent_span_id, frontendSpan.span_id, 'Service A must point to Frontend as parent');
     assert.strictEqual(serviceAServerSpan.http?.status_code, 201);
 
-    // Span 3: Service A Client Span (outbound call to Service B)
-    const serviceAClientSpan = spans.find((s) => s.service_name === 'order-service' && s.span_kind === 'CLIENT');
-    assert.ok(serviceAClientSpan, 'Service A outbound client span exists');
-    assert.strictEqual(serviceAClientSpan.trace_id, expectedTraceId);
-    assert.strictEqual(serviceAClientSpan.parent_span_id, serviceAServerSpan.span_id, 'Service A outbound call must point to incoming order span');
+    // Span 3: Service A Database Insert Span (PostgreSQL orders insert)
+    const serviceADbInsertSpan = spans.find(
+      (s) => s.service_name === 'order-service' && s.db?.operation === 'INSERT'
+    );
+    assert.ok(serviceADbInsertSpan, 'Service A DB insert span exists');
+    assert.strictEqual(serviceADbInsertSpan.parent_span_id, serviceAServerSpan.span_id, 'DB insert must point to Service A server span');
+    assert.strictEqual(serviceADbInsertSpan.db?.system, 'postgresql');
+    assert.strictEqual(serviceADbInsertSpan.db?.collection_or_table, 'orders');
+    assert.ok(serviceADbInsertSpan.db?.statement?.includes('?'), 'DB statement was sanitized with parameterization');
 
-    // Span 4: Service B Server Span (incoming charge call)
+    // Span 4: Service A Outbound HTTP Client Span (call to Service B)
+    const serviceAHttpClientSpan = spans.find(
+      (s) => s.service_name === 'order-service' && s.span_kind === 'CLIENT' && Boolean(s.http)
+    );
+    assert.ok(serviceAHttpClientSpan, 'Service A outbound HTTP client span exists');
+    assert.strictEqual(serviceAHttpClientSpan.trace_id, expectedTraceId);
+    assert.strictEqual(serviceAHttpClientSpan.parent_span_id, serviceAServerSpan.span_id, 'Service A outbound HTTP must point to incoming order span');
+
+    // Span 5: Service B Server Span (incoming charge call)
     const serviceBServerSpan = spans.find((s) => s.service_name === 'payment-service' && s.span_kind === 'SERVER');
     assert.ok(serviceBServerSpan, 'Service B server span exists');
     assert.strictEqual(serviceBServerSpan.trace_id, expectedTraceId);
-    assert.strictEqual(serviceBServerSpan.parent_span_id, serviceAClientSpan.span_id, 'Service B must point to Service A outbound client span');
+    assert.strictEqual(serviceBServerSpan.parent_span_id, serviceAHttpClientSpan.span_id, 'Service B must point to Service A outbound HTTP client span');
     assert.strictEqual(serviceBServerSpan.http?.status_code, 200);
+
+    // Span 6: Service B Redis Cache Lookup (Cache MISS on first checkout)
+    const serviceBRedisGetSpan = spans.find(
+      (s) => s.service_name === 'payment-service' && s.db?.system === 'redis' && s.db?.operation === 'GET'
+    );
+    assert.ok(serviceBRedisGetSpan, 'Service B Redis GET span exists');
+    assert.strictEqual(serviceBRedisGetSpan.parent_span_id, serviceBServerSpan.span_id, 'Redis lookup must point to Service B server span');
+    assert.strictEqual(serviceBRedisGetSpan.db?.cache_hit, false, 'First charge must be a cache MISS');
+
+    // Span 7: Service B Database Insert Span (PostgreSQL payments insert)
+    const serviceBDbInsertSpan = spans.find(
+      (s) => s.service_name === 'payment-service' && s.db?.system === 'postgresql' && s.db?.operation === 'INSERT'
+    );
+    assert.ok(serviceBDbInsertSpan, 'Service B DB insert span exists');
+    assert.strictEqual(serviceBDbInsertSpan.parent_span_id, serviceBServerSpan.span_id, 'Payment DB insert must point to Service B server span');
+    assert.strictEqual(serviceBDbInsertSpan.db?.collection_or_table, 'payments');
+
+    // Span 8: Service B Redis Cache SET Span (caching authorization token)
+    const serviceBRedisSetSpan = spans.find(
+      (s) => s.service_name === 'payment-service' && s.db?.system === 'redis' && s.db?.operation === 'SET'
+    );
+    assert.ok(serviceBRedisSetSpan, 'Service B Redis SET span exists');
+    assert.strictEqual(serviceBRedisSetSpan.parent_span_id, serviceBServerSpan.span_id, 'Redis SET must point to Service B server span');
+    assert.ok(serviceBRedisSetSpan.db?.statement?.includes('[REDACTED]'), 'Redis statement redacted sensitive token');
+
+    // Span 9: Service A Database Update Span (PostgreSQL orders confirmed update)
+    const serviceADbUpdateSpan = spans.find(
+      (s) => s.service_name === 'order-service' && s.db?.operation === 'UPDATE'
+    );
+    assert.ok(serviceADbUpdateSpan, 'Service A DB update span exists');
+    assert.strictEqual(serviceADbUpdateSpan.parent_span_id, serviceAServerSpan.span_id, 'DB update must point to Service A server span');
+    assert.strictEqual(serviceADbUpdateSpan.db?.system, 'postgresql');
+    assert.strictEqual(serviceADbUpdateSpan.db?.collection_or_table, 'orders');
 
     // 7. Verify Sanitized Payloads
     assert.deepStrictEqual(serviceAServerSpan.http?.request_body, orderPayload);
     assert.strictEqual((serviceBServerSpan.http?.request_body as any)?.amount, 2499);
+  });
+
+  it('should capture cache HIT when duplicate charge is requested with same idempotency key', async () => {
+    // Fire a direct request to Service B with an existing orderId
+    const res = await fetch(`http://127.0.0.1:${serviceBPort}/charge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: 'duplicate-test-order', amount: 100, currency: 'USD' })
+    });
+    const firstResult = await res.json();
+    assert.strictEqual((firstResult as any).status, 'paid');
+
+    await Doomwatch.flush();
+    await new Promise((r) => setTimeout(r, 100));
+    await collectorServer.getBuffer().flush();
+
+    // Now fire the identical second request -> should HIT cache
+    const secondRes = await fetch(`http://127.0.0.1:${serviceBPort}/charge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId: 'duplicate-test-order', amount: 100, currency: 'USD' })
+    });
+    const secondResult = (await secondRes.json()) as any;
+    assert.strictEqual(secondResult.cached, true);
+    const traceId = secondResult.activeTraceId;
+
+    await Doomwatch.flush();
+    await new Promise((r) => setTimeout(r, 100));
+    await collectorServer.getBuffer().flush();
+
+    const trace = await collectorStorage.getTraceById(traceId);
+    assert.ok(trace, `Trace ${traceId} should exist`);
+    const redisHitSpan = trace.spans.find(
+      (s) => s.service_name === 'payment-service' && s.db?.system === 'redis' && s.db?.operation === 'GET'
+    );
+    assert.ok(redisHitSpan, 'Redis GET span exists');
+    assert.strictEqual(redisHitSpan.db?.cache_hit, true, 'Subsequent request must be a cache HIT');
+  });
+
+  it('should filter traces in collector storage by db_system', async () => {
+    const pgTraces = await collectorStorage.getTraces({ db_system: 'postgresql' });
+    assert.ok(pgTraces.length >= 1, 'Should find at least 1 trace with postgresql queries');
+
+    const redisTraces = await collectorStorage.getTraces({ db_system: 'redis' });
+    assert.ok(redisTraces.length >= 1, 'Should find at least 1 trace with redis commands');
   });
 });

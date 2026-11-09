@@ -642,6 +642,14 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       <option value="5xx">5xx Server Error</option>
     </select>
 
+    <select id="db-select" class="select-input" onchange="handleFilterChange()">
+      <option value="">All Storage / Caches</option>
+      <option value="postgresql">PostgreSQL</option>
+      <option value="mongodb">MongoDB</option>
+      <option value="redis">Redis</option>
+      <option value="mysql">MySQL</option>
+    </select>
+
     <label class="checkbox-label">
       <input type="checkbox" id="errors-only-cb" onchange="handleFilterChange()">
       Errors Only
@@ -700,6 +708,17 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
       return serviceColorMap.get(serviceName);
     }
 
+    function getDbColor(system) {
+      switch ((system || '').toLowerCase()) {
+        case 'mongodb': return '#10b981'; // Emerald Green
+        case 'postgresql':
+        case 'mysql': return '#06b6d4';   // Cyan / Blue
+        case 'redis': return '#f97316';    // Crimson / Orange
+        case 'memcached': return '#eab308';// Amber
+        default: return '#a855f7';        // Purple
+      }
+    }
+
     async function checkHealth() {
       try {
         const res = await fetch('/health');
@@ -719,9 +738,11 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
         const params = new URLSearchParams();
         const service = document.getElementById('service-select').value;
         const errorsOnly = document.getElementById('errors-only-cb').checked;
+        const dbSystem = document.getElementById('db-select')?.value;
 
         if (service) params.set('service', service);
         if (errorsOnly) params.set('has_error', 'true');
+        if (dbSystem) params.set('db_system', dbSystem);
 
         const res = await fetch(\`/v1/traces?\${params.toString()}\`);
         if (!res.ok) return;
@@ -894,6 +915,10 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             const widthPercent = Math.max(2, (Math.max(1, span.duration_ms) / totalDuration) * 100);
             const color = getServiceColor(span.service_name);
             const isError = span.error || (span.http?.status_code >= 400);
+            const isDb = Boolean(span.db);
+            const dbColor = isDb ? getDbColor(span.db.system) : null;
+            const barColor = isError ? '#ef4444' : (isDb ? dbColor : color);
+            const isSlowDb = isDb && span.duration_ms > 100;
 
             return \`
               <div class="waterfall-row" onclick="openSpanDrawer('\${span.span_id}')">
@@ -902,10 +927,20 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
                   <span class="badge" style="background: \${color}22; color: \${color}; border: 1px solid \${color}44;">
                     \${escapeHtml(span.service_name)}
                   </span>
+                  \${isDb ? \`
+                    <span class="badge" style="background: \${dbColor}22; color: \${dbColor}; border: 1px solid \${dbColor}66;">
+                      \${escapeHtml(span.db.system)}
+                    </span>
+                  \` : ''}
+                  \${isSlowDb ? \`
+                    <span class="badge" style="background: #ef444422; color: #f87171; border: 1px solid #ef444466;">
+                      ⚠️ Slow DB
+                    </span>
+                  \` : ''}
                   <span class="span-name" title="\${escapeHtml(span.name)}">\${escapeHtml(span.name)}</span>
                 </div>
                 <div class="span-timeline-col">
-                  <div class="timeline-bar-wrapper" style="left: \${leftPercent}%; width: \${widthPercent}%; background: \${isError ? '#ef4444' : color};">
+                  <div class="timeline-bar-wrapper" style="left: \${leftPercent}%; width: \${widthPercent}%; background: \${barColor};">
                     <span class="bar-duration-label">\${span.duration_ms}ms</span>
                   </div>
                 </div>
@@ -988,6 +1023,38 @@ export const DASHBOARD_HTML = `<!DOCTYPE html>
             </div>
           \`;
         }
+      }
+
+      if (span.db) {
+        const dbColor = getDbColor(span.db.system);
+        contentHtml += \`
+          <div class="drawer-section">
+            <div class="drawer-section-title" style="color: \${dbColor};">Database & Cache Attributes</div>
+            <div class="info-grid">
+              <div class="info-label">System:</div>
+              <div class="info-value"><span class="badge" style="background: \${dbColor}22; color: \${dbColor}; font-weight: 700; border: 1px solid \${dbColor}55;">\${escapeHtml(span.db.system.toUpperCase())}</span></div>
+              <div class="info-label">Operation:</div>
+              <div class="info-value"><code>\${escapeHtml(span.db.operation || 'N/A')}</code></div>
+              <div class="info-label">Target:</div>
+              <div class="info-value"><code>\${escapeHtml(span.db.collection_or_table || 'N/A')}</code></div>
+              \${span.db.name ? \`<div class="info-label">Database Name:</div><div class="info-value"><code>\${escapeHtml(span.db.name)}</code></div>\` : ''}
+              \${span.db.rows_affected !== undefined ? \`<div class="info-label">Rows Affected:</div><div class="info-value"><strong>\${span.db.rows_affected}</strong></div>\` : ''}
+              \${span.db.cache_hit !== undefined ? \`
+                <div class="info-label">Cache Status:</div>
+                <div class="info-value">
+                  <span class="badge" style="background: \${span.db.cache_hit ? '#10b98122' : '#f9731622'}; color: \${span.db.cache_hit ? '#10b981' : '#f97316'}; border: 1px solid \${span.db.cache_hit ? '#10b98144' : '#f9731644'};">
+                    \${span.db.cache_hit ? 'HIT' : 'MISS'}
+                  </span>
+                </div>\` : ''}
+            </div>
+            \${span.db.statement ? \`
+              <div style="margin-top: 14px;">
+                <div class="info-label" style="margin-bottom: 6px; font-weight: 600; color: #94a3b8;">Sanitized Statement:</div>
+                <pre class="json-code" style="color: #93c5fd; white-space: pre-wrap; word-break: break-all;">\${escapeHtml(span.db.statement)}</pre>
+              </div>
+            \` : ''}
+          </div>
+        \`;
       }
 
       document.getElementById('drawer-content').innerHTML = contentHtml;

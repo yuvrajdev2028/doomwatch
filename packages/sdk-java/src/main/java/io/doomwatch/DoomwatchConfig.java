@@ -14,6 +14,7 @@ public class DoomwatchConfig {
     private final int batchSize;
     private final int maxQueueCapacity;
     private final List<String> redactedKeys;
+    private final boolean instrumentDatabase;
     private final boolean debug;
 
     private DoomwatchConfig(Builder builder) {
@@ -25,6 +26,7 @@ public class DoomwatchConfig {
         this.batchSize = builder.batchSize;
         this.maxQueueCapacity = builder.maxQueueCapacity;
         this.redactedKeys = Collections.unmodifiableList(builder.redactedKeys);
+        this.instrumentDatabase = builder.instrumentDatabase;
         this.debug = builder.debug;
     }
 
@@ -40,6 +42,7 @@ public class DoomwatchConfig {
     public int getBatchSize() { return batchSize; }
     public int getMaxQueueCapacity() { return maxQueueCapacity; }
     public List<String> getRedactedKeys() { return redactedKeys; }
+    public boolean isInstrumentDatabase() { return instrumentDatabase; }
     public boolean isDebug() { return debug; }
 
     public static class Builder {
@@ -53,6 +56,9 @@ public class DoomwatchConfig {
         private int batchSize = 50;
         private int maxQueueCapacity = 5000;
         private List<String> redactedKeys = new ArrayList<>();
+        private boolean instrumentDatabase = System.getenv("DOOMWATCH_INSTRUMENT_DATABASE") != null
+                ? !"false".equalsIgnoreCase(System.getenv("DOOMWATCH_INSTRUMENT_DATABASE")) && !"0".equals(System.getenv("DOOMWATCH_INSTRUMENT_DATABASE"))
+                : true;
         private boolean debug = false;
 
         public Builder(String serviceName) {
@@ -91,6 +97,11 @@ public class DoomwatchConfig {
 
         public Builder addRedactedKey(String key) {
             if (key != null) this.redactedKeys.add(key);
+            return this;
+        }
+
+        public Builder instrumentDatabase(boolean instrumentDatabase) {
+            this.instrumentDatabase = instrumentDatabase;
             return this;
         }
 
