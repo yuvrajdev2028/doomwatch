@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert';
 import http from 'node:http';
 import { Span } from '@doomwatch/core';
@@ -6,7 +6,7 @@ import { MemoryStorageEngine } from './storage/memory.js';
 import { MongoStorageEngine } from './storage/mongo.js';
 import { SpanBuffer } from './buffer.js';
 import { CollectorServer } from './server.js';
-import { CollectorConfig } from './config.js';
+import { CollectorConfig, loadConfig } from './config.js';
 
 function makeSampleSpan(overrides: Partial<Span> = {}): Span {
   const now = Date.now();
@@ -226,6 +226,60 @@ describe('MongoStorageEngine Aggregation & Trace Computation', () => {
       await engine.close();
     }
   });
+
+  it('should configure and update TTL index when ttlDays > 0 and embed start_time_date', async () => {
+    const mongoUri = process.env.MONGODB_URI || 'mongodb://localhost:27017/doomwatch';
+    const testDb = 'doomwatch_ttl_test';
+    const engine7 = new MongoStorageEngine(mongoUri, testDb, 7);
+
+    try {
+      await engine7.init();
+    } catch {
+      // Gracefully skip if MongoDB is not accessible
+      return;
+    }
+
+    try {
+      const collection = (engine7 as any).spansCollection;
+      const indexes = await collection.indexes();
+      const ttlIndex7 = indexes.find(
+        (idx: any) => idx.name === 'doomwatch_spans_ttl' || idx.key?.start_time_date !== undefined
+      );
+
+      assert.ok(ttlIndex7, 'TTL index should be created');
+      assert.strictEqual(ttlIndex7.expireAfterSeconds, 7 * 86400, 'TTL should match 7 days in seconds');
+
+      // Verify span insertion includes start_time_date Date object
+      const now = Date.now();
+      const sample = makeSampleSpan({ trace_id: 'test-mongo-ttl-1', start_time_unix_ms: now });
+      await engine7.insertSpans([sample]);
+
+      const doc = await collection.findOne({ trace_id: 'test-mongo-ttl-1' });
+      assert.ok(doc, 'Inserted span should exist in mongo');
+      assert.ok(doc.start_time_date instanceof Date, 'start_time_date must be a BSON Date instance');
+      assert.strictEqual(doc.start_time_date.getTime(), now, 'Date time must equal start_time_unix_ms');
+
+      await engine7.close();
+
+      // Test updating existing TTL index to 14 days
+      const engine14 = new MongoStorageEngine(mongoUri, testDb, 14);
+      await engine14.init();
+
+      const updatedIndexes = await (engine14 as any).spansCollection.indexes();
+      const ttlIndex14 = updatedIndexes.find(
+        (idx: any) => idx.name === 'doomwatch_spans_ttl' || idx.key?.start_time_date !== undefined
+      );
+
+      assert.ok(ttlIndex14, 'Updated TTL index should exist');
+      assert.strictEqual(ttlIndex14.expireAfterSeconds, 14 * 86400, 'TTL should update to 14 days in seconds');
+
+      await (engine14 as any).spansCollection.deleteMany({ trace_id: /^test-mongo-ttl-/ }).catch(() => {});
+      await engine14.close();
+    } catch (err) {
+      await engine7.close().catch(() => {});
+      throw err;
+    }
+  });
 });
 
 describe('CollectorServer HTTP Endpoints', () => {
@@ -326,5 +380,44 @@ describe('CollectorServer HTTP Endpoints', () => {
 
   it('should gracefully stop server', async () => {
     await server.stop();
+  });
+});
+
+describe('CollectorConfig TTL Parsing', () => {
+  const origTtl = process.env.DOOMWATCH_TTL_DAYS;
+  const origLegacyTtl = process.env.TTL_DAYS;
+
+  after(() => {
+    if (origTtl !== undefined) process.env.DOOMWATCH_TTL_DAYS = origTtl;
+    else delete process.env.DOOMWATCH_TTL_DAYS;
+    if (origLegacyTtl !== undefined) process.env.TTL_DAYS = origLegacyTtl;
+    else delete process.env.TTL_DAYS;
+  });
+
+  it('should default to 0 (disabled) when unset', () => {
+    delete process.env.DOOMWATCH_TTL_DAYS;
+    delete process.env.TTL_DAYS;
+    const cfg = loadConfig();
+    assert.strictEqual(cfg.ttlDays, 0);
+  });
+
+  it('should parse valid positive numbers', () => {
+    process.env.DOOMWATCH_TTL_DAYS = '7';
+    const cfg = loadConfig();
+    assert.strictEqual(cfg.ttlDays, 7);
+
+    process.env.DOOMWATCH_TTL_DAYS = '30';
+    assert.strictEqual(loadConfig().ttlDays, 30);
+  });
+
+  it('should gracefully fallback to 0 for invalid or non-positive values', () => {
+    process.env.DOOMWATCH_TTL_DAYS = 'invalid';
+    assert.strictEqual(loadConfig().ttlDays, 0);
+
+    process.env.DOOMWATCH_TTL_DAYS = '-10';
+    assert.strictEqual(loadConfig().ttlDays, 0);
+
+    process.env.DOOMWATCH_TTL_DAYS = '0';
+    assert.strictEqual(loadConfig().ttlDays, 0);
   });
 });

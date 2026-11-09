@@ -11,7 +11,8 @@ export class MongoStorageEngine implements StorageEngine {
 
   constructor(
     private uri: string,
-    private dbName: string = 'doomwatch'
+    private dbName: string = 'doomwatch',
+    private ttlDays: number = 0
   ) {
     this.client = new MongoClient(this.uri, {
       connectTimeoutMS: 5000,
@@ -20,27 +21,88 @@ export class MongoStorageEngine implements StorageEngine {
     });
   }
 
+  getTtlDays(): number {
+    return this.ttlDays;
+  }
+
+  getTtlSeconds(): number {
+    return this.ttlDays > 0 ? Math.round(this.ttlDays * 86400) : 0;
+  }
+
   async init(): Promise<void> {
     await this.client.connect();
     this.db = this.client.db(this.dbName);
     this.spansCollection = this.db.collection<Span>('spans');
 
     // Create optimized indexes for high-throughput ingestion and fast query retrieval
-    await Promise.all([
+    const indexPromises: Promise<any>[] = [
       this.spansCollection.createIndex({ trace_id: 1 }),
       this.spansCollection.createIndex({ service_name: 1, start_time_unix_ms: -1 }),
       this.spansCollection.createIndex({ start_time_unix_ms: -1 }),
       this.spansCollection.createIndex({ 'http.status_code': 1 }),
       this.spansCollection.createIndex({ error: 1 }, { sparse: true }),
       this.spansCollection.createIndex({ 'db.system': 1, 'db.collection_or_table': 1, duration_ms: -1 })
-    ]);
+    ];
+
+    if (this.ttlDays > 0) {
+      indexPromises.push(this.ensureTtlIndex(Math.round(this.ttlDays * 86400)));
+    }
+
+    await Promise.all(indexPromises);
 
     this.connected = true;
   }
 
+  private async ensureTtlIndex(expireAfterSeconds: number): Promise<void> {
+    try {
+      let existingIndexes: Document[] = [];
+      try {
+        existingIndexes = await this.spansCollection.indexes();
+      } catch (err: any) {
+        // If collection does not exist yet (NamespaceNotFound / code 26), proceed with createIndex
+        if (err.code !== 26 && !err.message?.includes('ns does not exist')) {
+          throw err;
+        }
+      }
+
+      const ttlIndex = existingIndexes.find(
+        (idx) => (idx.key && (idx.key as any).start_time_date !== undefined) || idx.name === 'doomwatch_spans_ttl'
+      );
+
+      if (ttlIndex) {
+        if (ttlIndex.expireAfterSeconds !== expireAfterSeconds) {
+          if (ttlIndex.name) {
+            await this.spansCollection.dropIndex(ttlIndex.name);
+          }
+          await this.spansCollection.createIndex(
+            { start_time_date: 1 },
+            { expireAfterSeconds, name: 'doomwatch_spans_ttl' }
+          );
+          console.log(
+            `[Doomwatch MongoStorage] Updated TTL index to ${expireAfterSeconds}s (${this.ttlDays} day(s)).`
+          );
+        }
+      } else {
+        await this.spansCollection.createIndex(
+          { start_time_date: 1 },
+          { expireAfterSeconds, name: 'doomwatch_spans_ttl' }
+        );
+        console.log(
+          `[Doomwatch MongoStorage] Created TTL index for ${expireAfterSeconds}s (${this.ttlDays} day(s)).`
+        );
+      }
+    } catch (err: any) {
+      console.warn(`[Doomwatch MongoStorage] Failed to ensure TTL index: ${err.message}`);
+    }
+  }
+
   async insertSpans(spans: Span[]): Promise<number> {
     if (spans.length === 0) return 0;
-    const result = await this.spansCollection.insertMany(spans, { ordered: false });
+    const docs = spans.map((span) => ({
+      ...span,
+      start_time_date: new Date(span.start_time_unix_ms || Date.now())
+    }));
+    const result = await this.spansCollection.insertMany(docs as any, { ordered: false });
     return result.insertedCount;
   }
 

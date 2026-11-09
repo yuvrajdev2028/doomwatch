@@ -18,7 +18,7 @@ async function bootstrap() {
 
   try {
     console.log(`[Doomwatch Collector] Attempting connection to MongoDB: ${config.mongoUri}...`);
-    const mongoStorage = new MongoStorageEngine(config.mongoUri, config.mongoDbName);
+    const mongoStorage = new MongoStorageEngine(config.mongoUri, config.mongoDbName, config.ttlDays);
     await mongoStorage.init();
     storage = mongoStorage;
     console.log('[Doomwatch Collector] Connected to MongoDB successfully.');

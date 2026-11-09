@@ -26,6 +26,7 @@ services:
       MONGODB_DB_NAME: doomwatch
       BATCH_FLUSH_INTERVAL_MS: 500
       BATCH_SIZE: 50
+      DOOMWATCH_TTL_DAYS: 0 # 0 = disabled (default), set to N (e.g. 7, 14, 30) for automatic trace retention
     depends_on:
       - mongodb
 
